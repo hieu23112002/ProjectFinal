@@ -1,60 +1,66 @@
 import cv2 as cv
 import numpy as np
-import matplotlib.pyplot as plt
 
-"Dùng trong việc tền xử lý Resize , normalize, pad"
+def _sauvola(src, win=25, k=0.2, R=128):
+    src = src.astype(np.float32)
+    mean = cv.boxFilter(src, ddepth=-1, ksize=(win, win), normalize=True)
+    sqmean = cv.boxFilter(src * src, ddepth=-1, ksize=(win, win), normalize=True)
+    var = np.maximum(sqmean - mean * mean, 0)
+    std = np.sqrt(var)
+    thresh = mean * (1 + k * (std / R - 1))
+    return ((src > thresh).astype(np.uint8) * 255)
 
-def add_padding(img, old_w, old_h, new_w, new_h):
-    h1, h2 = int((new_h - old_h) / 2), int((new_h - old_h) / 2) + old_h
-    w1, w2 = int((new_w - old_w) / 2), int((new_w - old_w) / 2) + old_w
-    img_pad = np.ones([new_h, new_w, 3]) * 255
-    img_pad[h1:h2, w1:w2, :] = img
-    return img_pad
+def _remove_small_components(bin_img, min_area=25):
+    num, lbl, stats, _ = cv.connectedComponentsWithStats(bin_img, connectivity=8)
+    out = np.zeros_like(bin_img)
+    for i in range(1, num):
+        if stats[i, cv.CC_STAT_AREA] >= min_area:
+            out[lbl == i] = 255
+    return out
+
+def preprocess(path):
+    # --- 1️⃣ Đọc và chuyển xám ---
+    bgr = cv.imread(path)
+    gray = cv.cvtColor(bgr, cv.COLOR_BGR2GRAY)
+
+    # --- 2️⃣ Khử nền (dùng blur mạnh và normalize) ---
+    bg = cv.medianBlur(gray, 51)
+    norm = cv.normalize((gray.astype(np.float32) / (bg.astype(np.float32) + 1e-3)) * 128.0,
+                        None, 0, 255, cv.NORM_MINMAX).astype(np.uint8)
+
+    # --- 3️⃣ Làm mịn giảm nhiễu ---
+    norm = cv.bilateralFilter(norm, d=9, sigmaColor=50, sigmaSpace=50)
+
+    # --- 4️⃣ Tăng tương phản cục bộ ---
+    clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    norm = clahe.apply(norm)
+
+    # --- 5️⃣ Binarize (Sauvola) ---
+    bin_img = _sauvola(norm, win=25, k=0.2, R=128)
+
+    # # --- 6️⃣ Xóa dòng kẻ ngang ---
+    # bin_img = _remove_horizontal_lines(bin_img, min_len_ratio=0.2, thickness=3)
+
+    # --- 7️⃣ Lọc nhiễu nhỏ ---
+    bin_img = _remove_small_components(bin_img, min_area=50)
+
+    # --- 8️⃣ Làm mịn nhẹ để giảm chấm nhỏ ---
+    bin_img = cv.medianBlur(bin_img, 3)
+
+    # 🟩 --- 9️⃣ Làm đậm và sắc nét chữ ---
+    # Bước 1: Closing để nối chữ, lấp khoảng trống nhỏ
+    kernel_close = cv.getStructuringElement(cv.MORPH_ELLIPSE, (2, 2))
+    bin_img = cv.morphologyEx(bin_img, cv.MORPH_CLOSE, kernel_close, iterations=1)
+
+    # Bước 3: Làm mượt lại bằng Gaussian Blur nhẹ
+    bin_img = cv.GaussianBlur(bin_img, (3, 3), 0)
+
+    return bin_img
 
 
-def fix_size(img, target_w, target_h):
-    h, w = img.shape[:2]
-    if w < target_w and h < target_h:
-        img = add_padding(img, w, h, target_w, target_h)
-    elif w >= target_w and h < target_h:
-        new_w = target_w
-        new_h = int(h * new_w / w)
-        new_img = cv.resize(img, (new_w, new_h), interpolation=cv.INTER_AREA)
-        img = add_padding(new_img, new_w, new_h, target_w, target_h)
-    elif w < target_w and h >= target_h:
-        new_h = target_h
-        new_w = int(w * new_h / h)
-        new_img = cv.resize(img, (new_w, new_h), interpolation=cv.INTER_AREA)
-        img = add_padding(new_img, new_w, new_h, target_w, target_h)
-    else:
-        '''w>=target_w and h>=target_h '''
-        ratio = max(w / target_w, h / target_h)
-        new_w = max(min(target_w, int(w / ratio)), 1)
-        new_h = max(min(target_h, int(h / ratio)), 1)
-        new_img = cv.resize(img, (new_w, new_h), interpolation=cv.INTER_AREA)
-        img = add_padding(new_img, new_w, new_h, target_w, target_h)
-    return img
-
-
-def preprocess(path, img_w, img_h):
-    """ Pre-processing image for predicting """
-    img = cv.imread(path)
-    img = fix_size(img, img_w, img_h)
-
-    img = np.clip(img, 0, 255)
-    img = np.uint8(img)
-    img = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-
-    img = img.astype(np.float32)
-    img /= 255
-    return img
-
-
-if __name__ == '__main__':
-    img = cv.imread('../image/out4.png', 0)
-    plt.imshow(img, cmap='gray')
-    plt.show()
-    img = preprocess('../image/out4.png', 800, 64)
-    print(img.shape)
-    plt.imshow(img, cmap='gray')
-    plt.show()
+if __name__ == "__main__":
+    path_in = "../image/d943294e-57e5-4c90-91a6-647619bcf55e.jpg"
+    path_out = "../image/output_clean1.jpg"
+    img = preprocess(path_in)
+    cv.imwrite(path_out, img)
+    print("✅ Ảnh đã lưu:", path_out)

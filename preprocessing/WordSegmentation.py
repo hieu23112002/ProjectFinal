@@ -1,21 +1,10 @@
 import math
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
 
 "Dùng trong việc tách từ , dòng trong ảnh"
 def wordSegmentation(img, kernelSize=25, sigma=11, theta=7, minArea=0):
-    """Scale space technique for word segmentation proposed by R. Manmatha: http://ciir.cs.umass.edu/pubfiles/mm-27.pdf
-
-    Args:
-        img: grayscale uint8 image of the text-line to be segmented.
-        kernelSize: size of filter kernel, must be an odd integer.
-        sigma: standard deviation of Gaussian function used for filter kernel.
-        theta: approximated width/height ratio of words, filter function is distorted by this factor.
-        minArea: ignore word candidates smaller than specified area.
-
-    Returns:
-        List of tuples. Each tuple contains the bounding box and the image of the segmented word.
-    """
 
     # apply filter kernel
     kernel = createKernel(kernelSize, sigma, theta)
@@ -77,3 +66,34 @@ def createKernel(kernelSize, sigma, theta):
 
     kernel = kernel / np.sum(kernel)
     return kernel
+
+if __name__ == '__main__':
+    input_path = '../image/output_clean1.jpg'   # ảnh đã qua preprocess
+    output_path = '../image/w1.jpg'     # nơi lưu ảnh kết quả
+
+    # 1️⃣ Đọc ảnh đầu vào
+    img = cv2.imread(input_path, cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        raise FileNotFoundError(f"Không tìm thấy file: {input_path}")
+
+    # 2️⃣ Chuẩn bị ảnh (resize chiều cao về 64 cho đồng nhất)
+    imgPrepared = prepareImg(img, 64)
+
+    # 3️⃣ Tách từ
+    words = wordSegmentation(imgPrepared, kernelSize=25, sigma=11, theta=7, minArea=100)
+
+    # 4️⃣ Vẽ bounding boxes quanh các vùng phát hiện được
+    imgBoxed = cv2.cvtColor(imgPrepared, cv2.COLOR_GRAY2BGR)
+    for (box, w_img) in words:
+        x, y, w, h = box
+        cv2.rectangle(imgBoxed, (x, y), (x + w, y + h), (0, 0, 255), 2)
+
+    # 5️⃣ Lưu kết quả ra file
+    cv2.imwrite(output_path, imgBoxed)
+    print(f"✅ Đã lưu ảnh có bounding box tại: {output_path}")
+    print(f"Phát hiện được {len(words)} vùng chữ (từ)")
+
+    # 6️⃣ (Tuỳ chọn) Hiển thị để xem nhanh
+    plt.imshow(cv2.cvtColor(imgBoxed, cv2.COLOR_BGR2RGB))
+    plt.title("Segmentation Result")
+    plt.show()

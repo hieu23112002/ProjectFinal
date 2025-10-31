@@ -15,8 +15,8 @@ from postprocessing.Spell import correction_list
 def predict(w_model_predict, l_model_predict, test_img):
 	res = []
 	text = []
-	img = prepareImg(cv2.imread(test_img), 64)
-	res = wordSegmentation(img, kernelSize=25, sigma=11, theta=7, minArea=100)
+	img = prepareImg(cv2.imread(test_img), 64) #Chuẩn bị ảnh
+	res = wordSegmentation(img, kernelSize=25, sigma=11, theta=7, minArea=100) # Tìm và cắt ra các vùng chứa chữ (từng từ)
 	if not os.path.exists('tmp'):
 		os.mkdir('tmp')
 	for (j, w) in enumerate(res):
@@ -25,11 +25,12 @@ def predict(w_model_predict, l_model_predict, test_img):
 	imgFiles = os.listdir('tmp')
 	imgFiles = sorted(imgFiles)
 	for f in imgFiles:
-		text.append(predict_image(w_model_predict, 'tmp/'+f, is_word=True))
-	shutil.rmtree('tmp')
-	text = correction_list(text)
+		text.append(predict_image(w_model_predict, 'tmp/'+f, is_word=True))  #Gọi model nhận dạng từng từ
+	shutil.rmtree('tmp') #xóa
+	text = correction_list(text) # Hậu xử lý (Spell)
 	text1 = ' '.join(text)
-	text2 = predict_image(l_model_predict, test_img, is_word=False)
+	text2 = predict_image(l_model_predict, test_img, is_word=False) #Dự đoán bằng mô hình “line” để nhận dạng toàn bộ dòng chữ trong cùng ảnh,
+																	# không cắt nhỏ.
 	return text1, text2
 
 
